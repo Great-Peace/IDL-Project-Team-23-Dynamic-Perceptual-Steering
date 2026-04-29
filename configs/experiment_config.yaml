@@ -1,0 +1,110 @@
+# ============================================================
+# configs/experiment_config.yaml
+# Experiment settings for all phases
+# ============================================================
+
+# --- General Settings ---
+general:
+  seed: 42
+  output_dir: "results"
+  log_level: "INFO"
+  save_intermediate: true                   # Save results after each batch
+  batch_size: 8                             # Images per inference batch
+  num_workers: 4                            # DataLoader workers
+
+# --- Phase 2: Baseline Evaluation ---
+baseline:
+  prompts:
+    neutral: "What is in this image?"       # The default neutral prompt
+    structural: >                           # Structural Lens — focus on shape/function
+      Look carefully at the overall shape,
+      form, and structure of the main object
+      in this image. What type of object is
+      this based purely on its physical form?
+      Choose the most accurate category.
+    cultural: >                             # Cultural Lens — focus on texture/origin
+      Analyze the specific cultural textures,
+      materials, patterns, and regional
+      craftsmanship visible in this image.
+      What African culture, region, or
+      tradition does this object originate
+      from? Describe the cultural markers.
+  save_path: "results/baseline"
+  clip_baseline: true                       # Also run CLIP vision-only baseline
+
+# --- Phase 3A: Manual Dynamic Steering ---
+steering:
+  run_structural_only: true
+  run_cultural_only: true
+  run_sequential: true                      # Run structural THEN cultural (Dual-Lens)
+  save_path: "results/steering"
+  oversteer_threshold: 0.80                 # If shape accuracy drops below this, flag as over-steering
+
+# --- Phase 3B: Automated Prompt Optimization ---
+apo:
+  save_path: "results/apo"
+  num_iterations: 30                        # Max optimization rounds
+  early_stopping_patience: 5               # Stop if no improvement for N rounds
+  optimization_target: "cultural_recall"   # Metric to maximize
+  accuracy_floor: 0.80                     # Shape accuracy must stay above this
+  initial_prompts:                         # Seed prompts to start optimization
+    - "What is in this image?"
+    - "Analyze the specific cultural textures, materials, and regional architectural style of this object. What African culture might this belong to?"
+    - "Examine the weave patterns, geometric motifs, and material composition. What is the cultural origin of this artifact?"
+  optimizer_system_prompt: >
+    You are an expert prompt engineer helping to maximize cultural recognition
+    in vision-language models. Your task is to generate image description prompts
+    that help the model identify African cultural textures, materials, and origins
+    while maintaining accurate functional identification. Keep prompts under 50 words.
+    Be creative and non-obvious. Output ONLY the prompt text, nothing else.
+
+# --- Phase 3C: Confidence Probing ---
+probing:
+  save_path: "results/probing"
+  # Token pairs to compare confidence on
+  # Format: [shape_token, cultural_token]
+  token_pairs:
+    - ["bowl", "Kente"]
+    - ["bag", "Mudcloth"]
+    - ["building", "Sudano-Sahelian"]
+    - ["cloth", "Bogolanfini"]
+    - ["basket", "Yoruba"]
+    - ["pot", "Zulu"]
+    - ["garment", "Kanga"]
+    - ["mask", "Dogon"]
+  extract_top_k: 10                         # Top-K tokens to analyze per prediction
+  prompts_to_probe:
+    - "neutral"
+    - "cultural"
+    - "sequential"
+
+# --- Phase 4: Adversarial Texture Steering ---
+adversarial:
+  save_path: "results/adversarial"
+  # Western iconic shapes to use as content images
+  western_shapes:
+    - "phone_booth"
+    - "fire_hydrant"
+    - "mailbox"
+    - "traffic_cone"
+    - "park_bench"
+  # African textures to apply
+  african_textures:
+    - "Zulu beadwork"
+    - "Kente cloth"
+    - "Mudcloth"
+    - "Adinkra symbols"
+    - "Ndebele geometric patterns"
+  pairs_per_combination: 5
+
+# --- PSC SLURM Settings ---
+psc:
+  partition: "GPU-shared"                   # PSC GPU partition
+  gpus_per_node: 1
+  gpu_type: "a100"
+  time_limit: "08:00:00"                    # 8 hour jobs
+  memory: "40GB"
+  conda_env: "perceptual_steering"          # Your conda environment name
+  modules:
+    - "anaconda3"
+    - "cuda/11.8"

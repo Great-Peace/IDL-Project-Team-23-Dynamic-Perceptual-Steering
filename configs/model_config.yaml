@@ -1,0 +1,43 @@
+# ============================================================
+# configs/model_config.yaml
+# Model configuration for Dynamic Perceptual Steering
+# ============================================================
+
+# --- Primary VLM: InternVL-3 (8B) ---
+internvl:
+  model_id: "OpenGVLab/InternVL3-8B"        # HuggingFace model ID
+  torch_dtype: "bfloat16"                    # Use bfloat16 for A100s on PSC
+  device_map: "auto"                         # Auto distributes across available GPUs
+  max_new_tokens: 512                        # Max tokens to generate per response
+  temperature: 0.0                           # Greedy decoding for reproducibility
+  do_sample: false                           # No sampling — deterministic outputs
+  trust_remote_code: true                    # Required for InternVL custom code
+  load_in_8bit: false                        # Disable 8bit — use bfloat16 instead
+  attn_implementation: "flash_attention_2"   # Flash attention for memory efficiency
+
+# --- Vision-Only Baseline: CLIP ViT-L/14 ---
+clip:
+  model_id: "openai/clip-vit-large-patch14"  # Standard CLIP used in Gavrikov et al.
+  device: "cuda"
+  image_size: 224                            # CLIP input resolution
+
+# --- APO Optimizer LLM: Mistral-7B-Instruct ---
+# Used as the optimizer in the Automated Prompt Optimization loop
+# Open-source alternative to GPT-4
+apo_optimizer:
+  model_id: "mistralai/Mistral-7B-Instruct-v0.3"
+  torch_dtype: "bfloat16"
+  device_map: "auto"
+  max_new_tokens: 256                        # Shorter responses for prompt generation
+  temperature: 0.8                           # Some creativity in prompt generation
+  do_sample: true
+  trust_remote_code: false
+
+# --- Style Transfer Model (for Cue-Conflict Synthesis) ---
+style_transfer:
+  vgg_weights: "vgg19"                       # VGG19 for perceptual feature extraction
+  content_weight: 1.0                        # Weight for content loss
+  style_weight: 1e6                          # Weight for style loss (high = more texture)
+  num_steps: 300                             # Optimization steps per image
+  image_size: 512                            # Resolution for synthesis
+  learning_rate: 0.01

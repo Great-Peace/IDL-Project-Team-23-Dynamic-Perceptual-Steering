@@ -1,0 +1,56 @@
+# ============================================================
+# Dynamic Perceptual Steering — Requirements
+# CMU Africa | Deep Learning Project Team 21/23
+# ============================================================
+
+# Core Deep Learning
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.40.0
+accelerate>=0.27.0
+einops>=0.7.0
+
+# HuggingFace Ecosystem
+datasets>=2.18.0
+huggingface_hub>=0.21.0
+tokenizers>=0.15.0
+sentencepiece>=0.1.99
+timm>=0.9.12
+
+# Vision & Image Processing
+Pillow>=10.0.0
+opencv-python>=4.8.0
+scikit-image>=0.22.0
+imageio>=2.33.0
+
+# Style Transfer (Cue-Conflict Synthesis)
+scipy>=1.11.0
+
+# Evaluation & Metrics
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# CLIP Baseline
+ftfy>=6.1.1
+regex>=2023.0.0
+
+# Experiment Tracking
+tqdm>=4.66.0
+wandb>=0.16.0
+
+# Config & Utilities
+pyyaml>=6.0.0
+omegaconf>=2.3.0
+jsonlines>=3.1.0
+requests>=2.31.0
+
+# Statistical Testing
+statsmodels>=0.14.0
+
+# BitsAndBytes for quantization on PSC
+bitsandbytes>=0.42.0

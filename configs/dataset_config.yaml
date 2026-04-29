@@ -1,0 +1,109 @@
+# ============================================================
+# configs/dataset_config.yaml
+# Dataset configuration for Dynamic Perceptual Steering
+# ============================================================
+
+# --- Raw Data Paths ---
+paths:
+  raw_data_dir: "data/raw"
+  processed_data_dir: "data/processed"
+  cue_conflict_dir: "data/cue_conflict"
+  results_dir: "results"
+
+# --- Dataset Sources ---
+datasets:
+
+  afri_mcqa:
+    hf_id: "Atnafu/Afri-MCQA"                       # HuggingFace dataset ID
+    split: "test"                                     # Use test split for evaluation
+    local_dir: "data/raw/afri_mcqa"
+    image_col: "image"                                # Column name for images
+    shape_label_col: "object_type"                    # Functional object label
+    culture_label_col: "cultural_origin"              # Cultural origin label
+    filter_african: true                              # Only keep African samples
+
+  cultural_vqa:
+    hf_id: "nayakgi/CulturalVQA"                     # HuggingFace dataset ID
+    split: "test"
+    local_dir: "data/raw/cultural_vqa"
+    image_col: "image"
+    shape_label_col: "object_category"
+    culture_label_col: "country"
+    filter_african: true                              # Filter to African countries only
+    african_countries:                                # Countries to keep
+      - "Ethiopia"
+      - "Nigeria"
+      - "Rwanda"
+      - "Ghana"
+      - "Kenya"
+      - "South Africa"
+      - "Senegal"
+      - "Mali"
+      - "Egypt"
+      - "Morocco"
+      - "Tanzania"
+      - "Uganda"
+
+  afri_aya:
+    hf_id: "CohereLabsCommunity/afri-aya"
+    split: "train"
+    local_dir: "data/raw/afri_aya"
+    image_col: "image"
+    shape_label_col: "object_type"
+    culture_label_col: "cultural_context"
+    filter_african: true
+
+# --- Artifact Categories for Balanced Sampling ---
+# These define the 5 main categories your dataset must cover
+artifact_categories:
+  textiles:
+    description: "Woven fabrics, cloth, traditional garments"
+    examples: ["Kente cloth", "Bogolanfini (Mudcloth)", "Kanga", "Adire"]
+    target_count: 80                                  # Target images per category
+  architecture:
+    description: "Buildings, structures, monuments"
+    examples: ["Mud-brick houses", "Mosque architecture", "Rondavels", "Granaries"]
+    target_count: 80
+  everyday_objects:
+    description: "Household items, tools, utensils"
+    examples: ["Woven baskets", "Clay pots", "Calabashes", "Wooden stools"]
+    target_count: 80
+  food:
+    description: "Traditional foods and preparation vessels"
+    examples: ["Injera", "Jollof rice", "Tagine", "Ugali"]
+    target_count: 80
+  ritual_items:
+    description: "Ceremonial and cultural artifacts"
+    examples: ["Masks", "Beadwork", "Drums", "Fertility figures"]
+    target_count: 80
+
+# --- Cue-Conflict Synthesis Settings ---
+cue_conflict:
+  target_pairs: 500                                   # Total cue-conflict image pairs
+  pairs_per_category: 100                             # 100 per artifact category
+  content_source: "processed"                         # Use processed base images as content
+  style_source: "textures"                            # Use texture patches as style
+  output_format: "png"
+  verify_before_save: true                            # Human-interpretable check
+
+# --- Train/Val/Test Split ---
+splits:
+  test_size: 1.0                                      # All used for evaluation (no training)
+  random_seed: 42
+
+# --- Label Mappings for Shape Bias Calculation ---
+# Maps cultural labels to their "shape class" (functional identity)
+# This is critical for computing Shape Bias correctly
+shape_classes:
+  - "bowl"
+  - "bag"
+  - "cloth"
+  - "building"
+  - "pot"
+  - "basket"
+  - "garment"
+  - "mask"
+  - "drum"
+  - "stool"
+  - "hat"
+  - "mat"

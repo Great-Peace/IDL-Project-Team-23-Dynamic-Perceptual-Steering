@@ -1,0 +1,145 @@
+# ============================================================
+# Master Configuration — Dynamic Perceptual Steering
+# CMU Africa | Deep Learning Project Team 21/23
+# Edit paths and settings before running experiments
+# ============================================================
+
+project:
+  name: "dynamic_perceptual_steering"
+  team: "Team 21/23 - CMU Africa"
+  version: "1.0.0"
+
+# ── Paths ────────────────────────────────────────────────────
+paths:
+  # Raw downloaded datasets go here
+  data_raw: "data/raw"
+  # Processed / curated dataset goes here
+  data_processed: "data/processed"
+  # Synthesized cue-conflict images
+  data_cue_conflict: "data/cue_conflict"
+  # All experiment outputs (JSONs, CSVs)
+  results: "results"
+  # Figures and plots
+  figures: "results/figures"
+  # Discovered APO prompts
+  apo_prompts: "results/apo_prompts"
+  # Model cache directory. Uses HF_HOME when available.
+  model_cache: "${HF_HOME}"
+
+# ── Primary VLM ──────────────────────────────────────────────
+model:
+  name: "OpenGVLab/InternVL3-8B"
+  # Use 4-bit quantization on PSC to fit in GPU memory
+  load_in_4bit: true
+  # Use bfloat16 for efficiency
+  torch_dtype: "bfloat16"
+  # Maximum new tokens to generate per inference call
+  max_new_tokens: 512
+  # Temperature for generation (0 = greedy/deterministic)
+  temperature: 0.0
+  # Device map — "auto" lets accelerate handle multi-GPU
+  device_map: "auto"
+
+# ── CLIP Vision-Only Baseline ─────────────────────────────────
+clip:
+  model_name: "ViT-L/14"
+  # CLIP runs in float32 by default
+  device: "cuda"
+
+# ── APO Optimizer LLM ────────────────────────────────────────
+apo:
+  # Open-source optimizer model
+  optimizer_model: "mistralai/Mistral-7B-Instruct-v0.3"
+  load_in_4bit: false  # Use full precision for optimizer to improve prompt quality
+  torch_dtype: "float16"
+  # How many candidate prompts to generate per iteration
+  candidates_per_iteration: 5
+  # Maximum APO iterations before stopping
+  max_iterations: 20
+  # Stop if shape bias improvement is less than this between iterations
+  convergence_threshold: 0.005
+  # Minimum functional accuracy — do not accept prompts below this
+  min_functional_accuracy: 0.75
+  # Target: maximize texture/cultural recognition
+  optimization_target: "texture_bias"
+
+# ── Dataset ──────────────────────────────────────────────────
+dataset:
+  # Minimum images in final curated dataset
+  target_size: 10
+  # Artifact categories to include
+  categories:
+    - "textiles"
+    - "architecture"
+    - "everyday_objects"
+    - "food_and_drink"
+    - "ritual_items"
+    - "musical_instruments"
+  # African regions to cover
+  regions:
+    - "West Africa"
+    - "East Africa"
+    - "Southern Africa"
+    - "Central Africa"
+    - "North Africa"
+  # Image size for all processed images
+  image_size: 224
+  # Number of cue-conflict pairs to synthesize per category
+  cue_conflict_per_category: 80
+
+# ── Evaluation ───────────────────────────────────────────────
+evaluation:
+  # Labels used to determine shape vs texture decisions
+  # Shape label = functional object type (e.g. "bowl", "bag", "building")
+  # Texture label = cultural/material origin (e.g. "kente", "mudcloth", "adinkra")
+  batch_size: 1
+  # Run statistical significance tests
+  run_stats: true
+  # Significance threshold
+  alpha: 0.05
+
+# ── Prompts ──────────────────────────────────────────────────
+prompts:
+  neutral: "What is in this image?"
+  structural: >
+    Identify the primary object in this image based on its shape and structure.
+    What is the functional category of this object?
+    Answer with just the object type.
+  cultural: >
+    Analyze the specific cultural textures, materials, patterns, and regional
+    artistic style visible in this image. What African culture, ethnic group,
+    or geographic region does this object most likely originate from?
+    Describe the specific cultural markers you observe.
+  sequential_stage1: >
+    First, identify the basic functional type of the object in this image
+    based on its shape alone. What type of object is this?
+  sequential_stage2: >
+    Now, focusing entirely on the surface texture, patterns, weaving style,
+    materials, colors, and decorative elements — not the shape — what
+    specific African cultural tradition, ethnic group, or region produced this?
+
+# ── PSC Cluster Settings ──────────────────────────────────────
+psc:
+  partition: "GPU"
+  nodes: 1
+  ntasks_per_node: 1
+  gpus_per_node: 1
+  # GPU type on PSC Bridges-2
+  gpu_type: "v100-32g"
+  # Wall time for baseline (HH:MM:SS)
+  walltime_baseline: "04:00:00"
+  walltime_steering: "06:00:00"
+  walltime_apo: "12:00:00"
+  walltime_probing: "08:00:00"
+  # Memory in GB
+  mem_gb: 64
+
+# ── Logging ──────────────────────────────────────────────────
+logging:
+  # Set to true to log to Weights & Biases
+  use_wandb: false
+  wandb_project: "dynamic_perceptual_steering"
+  # Verbosity: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  # Save per-image outputs to JSON
+  save_per_image: true
