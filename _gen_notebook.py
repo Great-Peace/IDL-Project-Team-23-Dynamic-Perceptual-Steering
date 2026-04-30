@@ -9,6 +9,19 @@ def read(p):
     return (ROOT / p).read_text(encoding="utf-8")
 
 
+def strip_relative_imports(src: str) -> str:
+    """Remove 'from . ...' and 'from .. ...' lines; all deps are defined globally above."""
+    lines = []
+    for line in src.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith("from .") or stripped.startswith("from .."):
+            lines.append("# " + line.rstrip() + "  # (defined globally in notebook)\n")
+        else:
+            lines.append(line)
+    return "".join(lines)
+
+
+
 # ── Load every source file ────────────────────────────────────────────────────
 dataset_loader     = read("src/data/dataset_loader.py")
 cue_conflict_synth = read("src/data/cue_conflict_synthesizer.py")
@@ -610,7 +623,7 @@ By feeding Stage 1's output into Stage 2, the model cannot simply repeat the
 shape answer — it must reason specifically about cultural texture.\
 """))
 
-cells.append(code(dual_lens_py))
+cells.append(code(strip_relative_imports(dual_lens_py)))
 
 cells.append(md("""\
 ### 6.3  Automated Prompt Optimization (APO)
@@ -624,7 +637,7 @@ The optimizer receives a structured history of every prompt tried, along with it
 candidate prompts (each starting with `PROMPT:`) for evaluation.\
 """))
 
-cells.append(code(apo_py))
+cells.append(code(strip_relative_imports(apo_py)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PART 7: PROBING
@@ -650,7 +663,7 @@ was always encoded — it just needed activation. This rules out the alternative
 explanation that the model simply lacks African cultural knowledge.\
 """))
 
-cells.append(code(probing_py))
+cells.append(code(strip_relative_imports(probing_py)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PART 8: VISUALIZATION
@@ -688,7 +701,10 @@ Run this before placing real dataset images in `data/raw/`.
 Existing files are not overwritten.\
 """))
 
-cells.append(code(bootstrap_py))
+cells.append(code(bootstrap_py.replace(
+    "ROOT = Path(__file__).resolve().parent.parent",
+    "ROOT = Path.cwd()  # notebook runs from project root",
+)))
 
 cells.append(code("""\
 # Run the bootstrap

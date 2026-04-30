@@ -120,10 +120,34 @@ class InternVLWrapper:
             return os.environ.get("HF_HOME") or None
         return resolved
 
+    @staticmethod
+    def _patch_transformers():
+        """
+        Compatibility shim for transformers >= 4.47.
+        InternVLChatModel (loaded via trust_remote_code) does not implement
+        all_tied_weights_keys, which was added as a required property in 4.47.
+        We patch _move_missing_keys_from_meta_to_device to inject the attribute
+        before it is accessed, leaving all other behaviour unchanged.
+        """
+        try:
+            from transformers import modeling_utils
+            _orig = modeling_utils.PreTrainedModel._move_missing_keys_from_meta_to_device
+
+            def _patched(self, *args, **kwargs):
+                if not hasattr(self, "all_tied_weights_keys"):
+                    self.all_tied_weights_keys = {}
+                return _orig(self, *args, **kwargs)
+
+            modeling_utils.PreTrainedModel._move_missing_keys_from_meta_to_device = _patched
+        except AttributeError:
+            pass  # transformers < 4.47 — no patch needed
+
     def _load_model(self):
         """Load InternVL-3 with optional 4-bit quantization."""
-        # Configure 4-bit quantization for memory efficiency on PSC
-        if self.use_4bit and torch.cuda.is_available():
+        self._patch_transformers()
+        cuda_available = torch.cuda.is_available()
+
+        if self.use_4bit and cuda_available:
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.bfloat16,
@@ -133,35 +157,36 @@ class InternVLWrapper:
             logger.info("Using 4-bit quantization (BitsAndBytes NF4).")
         else:
             bnb_config = None
-            if not torch.cuda.is_available():
+            if not cuda_available:
                 logger.warning("CUDA not available. Running on CPU — this will be slow.")
 
-        # Load tokenizer
+
         tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
             trust_remote_code=True,
             cache_dir=self.cache_dir
         )
 
-        # Load model
         model_kwargs = {
             "trust_remote_code": True,
             "cache_dir": self.cache_dir,
+            "low_cpu_mem_usage": True,
         }
 
         if bnb_config is not None:
             model_kwargs["quantization_config"] = bnb_config
-            model_kwargs["device_map"] = "auto"
+            # BitsAndBytes places the model on CUDA automatically — no device_map needed.
+            # Passing device_map triggers caching_allocator_warmup in newer transformers,
+            # which requires all_tied_weights_keys — a property InternVLChatModel lacks.
         else:
             model_kwargs["torch_dtype"] = torch.bfloat16
-            model_kwargs["device_map"] = "auto"
 
-        model = AutoModel.from_pretrained(
-            self.model_name,
-            **model_kwargs
-        )
+        model = AutoModel.from_pretrained(self.model_name, **model_kwargs)
+
+        if bnb_config is None and cuda_available:
+            model = model.cuda()
+
         model.eval()
-
         return model, tokenizer
 
     def _format_prompt(self, prompt: str) -> str:

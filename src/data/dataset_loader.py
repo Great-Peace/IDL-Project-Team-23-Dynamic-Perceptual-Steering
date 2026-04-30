@@ -675,7 +675,10 @@ class AfricanCulturalDataset:
         """Reload a previously saved dataset manifest."""
         with open(manifest_path) as f:
             manifest = json.load(f)
-        records = [CulturalImageRecord(**item) for item in manifest]
+        records = []
+        for item in manifest:
+            item["image_path"] = item["image_path"].replace("\\", "/")
+            records.append(CulturalImageRecord(**item))
         return cls(records)
 
     def print_summary(self):
