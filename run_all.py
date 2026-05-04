@@ -12,6 +12,8 @@ Usage:
     python run_all.py --skip-apo                   # skip the 12h APO phase
     python run_all.py --phases 2 3a 5              # run specific phases only
     python run_all.py --include-phase4             # also run adversarial phase
+    python run_all.py --phases 3a 3c 5 \
+        --3a-conditions cultural cultural_geometric cultural_expert sequential
 """
 
 import argparse
@@ -46,7 +48,8 @@ PHASES = {
 }
 
 
-def run_phase(name: str, script: str, config: str, eta: str = None):
+def run_phase(name: str, script: str, config: str, eta: str = None,
+              extra_args: list = None):
     label = f"Phase {name}" if name != "bootstrap" else "Bootstrap"
     eta_str = f"  (estimated {eta})" if eta else ""
     logger.info("")
@@ -57,6 +60,8 @@ def run_phase(name: str, script: str, config: str, eta: str = None):
     cmd = [sys.executable, str(ROOT / script)]
     if name != "bootstrap":
         cmd += ["--config", config]
+    if extra_args:
+        cmd += extra_args
 
     phase_log = LOG_DIR / f"phase{name}.log"
     t0 = time.time()
@@ -98,6 +103,13 @@ def main():
                         help="Run only specific phases, e.g. --phases 2 3a 5")
     parser.add_argument("--stop-on-error", action="store_true",
                         help="Abort the pipeline if any phase fails")
+    parser.add_argument(
+        "--3a-conditions", nargs="+", metavar="COND", dest="conditions_3a",
+        help=(
+            "Pass specific conditions to phase 3a (avoids re-running complete ones). "
+            "e.g. --3a-conditions cultural cultural_geometric cultural_expert sequential"
+        ),
+    )
     args = parser.parse_args()
 
     # Determine which phases to run
@@ -123,7 +135,10 @@ def main():
             logger.warning(f"Unknown phase '{phase}' — skipping.")
             continue
         script, eta = PHASES[phase]
-        ok = run_phase(phase, script, args.config, eta)
+        extra = None
+        if phase == "3a" and args.conditions_3a:
+            extra = ["--conditions"] + args.conditions_3a
+        ok = run_phase(phase, script, args.config, eta, extra_args=extra)
         results[phase] = ok
         if not ok and args.stop_on_error:
             logger.error("Pipeline aborted (--stop-on-error).")
