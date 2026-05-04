@@ -43,12 +43,36 @@ class Evaluator:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.save_per_image = config["logging"].get("save_per_image", True)
 
+    def _find_checkpoint(self, prompt_type: str, prefix: str = ""):
+        """
+        Find the most recent partial result file for a condition that has
+        at least one real response. Returns (results_list, file_path) or
+        ([], None) if nothing usable exists.
+        """
+        candidates = sorted(
+            self.results_dir.glob(f"{prefix}{prompt_type}_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for path in candidates:
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                if isinstance(data, list) and any(
+                    r.get("response", "").strip() for r in data
+                ):
+                    return data, path
+            except Exception:
+                continue
+        return [], None
+
     def run(self, dataset,
             prompt: str,
             prompt_type: str,
             output_prefix: str = "") -> List[Dict]:
         """
         Run evaluation over the full dataset with a single prompt.
+        Automatically resumes from the most recent checkpoint if one exists.
 
         Args:
             dataset      : AfricanCulturalDataset
@@ -59,17 +83,34 @@ class Evaluator:
         Returns:
             List of per-image result dicts
         """
-        results = []
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = self.results_dir / f"{output_prefix}{prompt_type}_{timestamp}.json"
+        # ── Resume from checkpoint if available ──────────────────
+        existing, checkpoint_file = self._find_checkpoint(prompt_type, output_prefix)
+        done_indices = {r["idx"] for r in existing}
 
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Running evaluation: {prompt_type}")
-        logger.info(f"Prompt: {prompt[:80]}...")
-        logger.info(f"Dataset size: {len(dataset)}")
-        logger.info(f"{'='*60}")
+        if existing:
+            output_file = checkpoint_file
+            results = list(existing)
+            logger.info(f"\n{'='*60}")
+            logger.info(f"RESUMING evaluation: {prompt_type}")
+            logger.info(f"  Checkpoint : {checkpoint_file.name}")
+            logger.info(f"  Done       : {len(done_indices)}/{len(dataset)} images")
+            logger.info(f"  Remaining  : {len(dataset) - len(done_indices)} images")
+            logger.info(f"{'='*60}")
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = self.results_dir / f"{output_prefix}{prompt_type}_{timestamp}.json"
+            results = []
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Running evaluation: {prompt_type}")
+            logger.info(f"Prompt: {prompt[:80]}...")
+            logger.info(f"Dataset size: {len(dataset)}")
+            logger.info(f"{'='*60}")
 
-        for idx, record in enumerate(tqdm(dataset, desc=f"Eval [{prompt_type}]")):
+        for idx, record in enumerate(tqdm(dataset, desc=f"Eval [{prompt_type}]",
+                                          initial=len(done_indices),
+                                          total=len(dataset))):
+            if idx in done_indices:
+                continue
             try:
                 # Generate response from InternVL-3
                 response = self.model.generate(
@@ -96,10 +137,10 @@ class Evaluator:
                 }
                 results.append(result)
 
-                # Auto-save every 50 images to protect against crashes
-                if self.save_per_image and (idx + 1) % 50 == 0:
+                # Auto-save every 50 new results to protect against crashes
+                if self.save_per_image and len(results) % 50 == 0:
                     self._save_results(results, output_file)
-                    logger.debug(f"Auto-saved {idx + 1} results.")
+                    logger.debug(f"Auto-saved {len(results)} results.")
 
             except Exception as e:
                 logger.error(f"Evaluation failed for {record.image_path}: {e}")
@@ -117,7 +158,8 @@ class Evaluator:
                     "error": str(e)
                 })
 
-        # Final save
+        # Final save — sort by idx so file order matches dataset order
+        results.sort(key=lambda r: r["idx"])
         self._save_results(results, output_file)
         logger.info(f"Results saved to {output_file}")
 
@@ -125,8 +167,8 @@ class Evaluator:
         metrics = compute_all_metrics(results)
         self._log_metrics(metrics, prompt_type)
 
-        # Save aggregate metrics
-        metrics_file = self.results_dir / f"{output_prefix}metrics_{prompt_type}_{timestamp}.json"
+        # Save aggregate metrics (use stem of output file for consistent naming)
+        metrics_file = self.results_dir / f"{output_prefix}metrics_{output_file.stem.split('_', 1)[1] if '_' in output_file.stem else output_file.stem}.json"
         with open(metrics_file, "w") as f:
             json.dump(metrics, f, indent=2)
 
