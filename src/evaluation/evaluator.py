@@ -49,8 +49,12 @@ class Evaluator:
         at least one real response. Returns (results_list, file_path) or
         ([], None) if nothing usable exists.
         """
+        # Use exact prefix match: stem must be "{prefix}{prompt_type}_<timestamp>"
+        # so "cultural_*.json" doesn't accidentally match "cultural_expert_*.json"
+        exact_prefix = f"{prefix}{prompt_type}_"
         candidates = sorted(
-            self.results_dir.glob(f"{prefix}{prompt_type}_*.json"),
+            (p for p in self.results_dir.glob(f"{exact_prefix}*.json")
+             if p.stem.startswith(exact_prefix) and not p.stem[len(exact_prefix):len(exact_prefix)+1].isalpha()),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
