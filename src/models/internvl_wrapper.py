@@ -295,55 +295,85 @@ class InternVLWrapper:
         Returns:
             Dict mapping each target token to its probability [0, 1]
         """
-        # Preprocess image
         pixel_values = load_image(image).to(self.device)
         if self.use_4bit:
             pixel_values = pixel_values.to(torch.bfloat16)
 
-        # Tokenize prompt
-        formatted = self._format_prompt(prompt)
-        inputs = self.tokenizer(
-            formatted,
-            return_tensors="pt",
-            padding=True,
-        ).to(self.device)
-
-        # Forward pass to get logits
         try:
-            outputs = self.model(
-                **inputs,
-                pixel_values=pixel_values,
-                return_dict=True,
-                output_hidden_states=False
+            # ── Step 1: set img_context_token_id ────────────────────────────
+            # model.chat() sets this before calling generate(); we must do the
+            # same so that InternVL-3 knows which token positions to replace
+            # with visual embeddings during the forward pass.
+            IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
+            img_ctx_id = self.tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
+            if hasattr(self.model, 'img_context_token_id'):
+                self.model.img_context_token_id = img_ctx_id
+
+            # ── Step 2: build image token string ────────────────────────────
+            # Mirrors the string that model.chat() inserts into the prompt.
+            # Each image contributes num_image_token <IMG_CONTEXT> slots;
+            # the model's forward() replaces each slot with a visual embedding.
+            num_patches     = pixel_values.shape[0]          # 1 for single image
+            num_image_token = getattr(self.model, 'num_image_token', 256)
+            image_tokens    = (
+                '<img>'
+                + IMG_CONTEXT_TOKEN * num_image_token * num_patches
+                + '</img>'
             )
-            # logits shape: (batch, seq_len, vocab_size)
-            next_token_logits = outputs.logits[:, -1, :]  # last position
+            # Append a forced-choice directive so the first generated token is
+            # a content label, not a discourse opener ("The", "This", "I").
+            # Without this, P("bowl") at position 1 is near-zero in open-ended
+            # generation, making the shape vs. texture comparison meaningless.
+            full_prompt = f"{image_tokens}\n{prompt}\nAnswer in one word:"
 
-            # Convert to probabilities via softmax
-            probs = torch.softmax(next_token_logits, dim=-1)
+            # ── Step 3: tokenize using the model's chat template ─────────────
+            # apply_chat_template adds the role markers (<|im_start|> etc.) that
+            # the Qwen2.5/InternLM2 backbone expects. Falls back to the raw
+            # string if the tokenizer does not support it.
+            try:
+                query = self.tokenizer.apply_chat_template(
+                    [{"role": "user", "content": full_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            except Exception:
+                query = full_prompt
 
-            # Get probability for each target token
+            model_inputs = self.tokenizer(query, return_tensors='pt').to(self.device)
+
+            # ── Step 4: generate 1 token with scores returned ────────────────
+            # output_scores=True makes generate() return the raw logits for
+            # every generated position. scores[0] is the distribution over the
+            # full vocabulary for the first new token — the model's genuine
+            # next-token prediction conditioned on both the image and prompt,
+            # with visual embeddings properly injected.
+            gen_output = self.model.generate(
+                **model_inputs,
+                pixel_values=pixel_values,
+                max_new_tokens=1,
+                do_sample=False,
+                output_scores=True,
+                return_dict_in_generate=True,
+            )
+
+            probs = torch.softmax(gen_output.scores[0], dim=-1)  # (1, vocab_size)
+
+            # ── Step 5: look up each target token's probability ──────────────
             result = {}
             for token_str in target_tokens:
-                # Tokenize the target token
-                token_ids = self.tokenizer.encode(
-                    token_str, add_special_tokens=False
-                )
-                if len(token_ids) == 0:
+                ids = self.tokenizer.encode(token_str, add_special_tokens=False)
+                if not ids:
                     result[token_str] = 0.0
                     continue
-                # Use the first subtoken (main token)
-                token_id = token_ids[0]
-                if token_id < probs.shape[-1]:
-                    result[token_str] = float(probs[0, token_id].cpu())
-                else:
-                    result[token_str] = 0.0
+                tid = ids[0]
+                result[token_str] = (
+                    float(probs[0, tid].cpu()) if tid < probs.shape[-1] else 0.0
+                )
 
             return result
 
         except Exception as e:
             logger.error(f"Logit extraction failed: {e}")
-            # Return zeros if extraction fails
             return {token: 0.0 for token in target_tokens}
 
     @torch.no_grad()
